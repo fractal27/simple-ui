@@ -24,7 +24,7 @@ int main(void)
         return 1;
     }
 
-    if (!platform->init(platform, 400, 300, "SimpleUI Demo")) {
+    if (!platform->init(platform, 1920, 1080, "SimpleUI Demo")) {
         fprintf(stderr, "Failed to create window\n");
         return 1;
     }
@@ -39,13 +39,13 @@ int main(void)
     simpleui_context ctx;
     simpleui_init(&ctx, platform);
 
-    simpleui_add_button(&ctx, "btn1", 20, 20, 100, 30, "Click");
-    simpleui_element* btn1 = simpleui_add_button(&ctx, "btn2", 130, 20, 100, 30, "Hello");
-    simpleui_element* lbl1 = simpleui_add_label(&ctx, "lbl1", 50, 70, "SimpleUI Cross-Platform"); (void)lbl1;
-    simpleui_element* chk1 = simpleui_add_checkbox(&ctx, "chk1", 20, 90, false);                  (void)chk1;
-    simpleui_element* sld1 = simpleui_add_slider(&ctx, "sld1", 20, 130, 200, 0, 100, 50);         (void)sld1;
-    simpleui_element* btn3 = simpleui_add_button(&ctx, "btn3", 20, 170, 100, 30, "Quit");
-	simpleui_element* dropdown = simpleui_add_dropdown(&ctx, "dropdown1", 50, 50, 100, 24, options, 4, 0); (void)dropdown;
+	int base_x = 0;
+	int base_y = 0;
+
+    simpleui_add_label(&ctx, "label", base_x += 10, base_y += 10, "SimpleUI Cross-Platform");
+
+    simpleui_element* btn1 = simpleui_add_button(&ctx, "install_button", base_x += 20, base_y += 50, 100, 30, "Install");
+    simpleui_element* btn3 = simpleui_add_button(&ctx, "quit_button", base_x, base_y += 50, 100, 30, "Quit");
 
     while (!platform->get_quit(platform)) {
         platform->begin_frame(platform);
@@ -79,6 +79,7 @@ int main(void)
         simpleui_end(&ctx);
 
         platform->end_frame(platform);
+		usleep(8000);
     }
 
     platform->shutdown(platform);
