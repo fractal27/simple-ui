@@ -1,0 +1,32 @@
+[
+  {
+    "arguments": [
+      "/usr/bin/gcc",
+      "-Wall",
+      "-Wextra",
+      "-Iinclude",
+      "-c",
+      "-o",
+      "build/simpleui.o",
+      "src/simpleui.c"
+    ],
+    "directory": "/home/ganon/Personal/repos/simpleui",
+    "file": "/home/ganon/Personal/repos/simpleui/src/simpleui.c",
+    "output": "/home/ganon/Personal/repos/simpleui/build/simpleui.o"
+  },
+  {
+    "arguments": [
+      "/usr/bin/gcc",
+      "-Wall",
+      "-Wextra",
+      "-Iinclude",
+      "-c",
+      "-o",
+      "build/simpleui_x11.o",
+      "src/simpleui_x11.c"
+    ],
+    "directory": "/home/ganon/Personal/repos/simpleui",
+    "file": "/home/ganon/Personal/repos/simpleui/src/simpleui_x11.c",
+    "output": "/home/ganon/Personal/repos/simpleui/build/simpleui_x11.o"
+  }
+]
