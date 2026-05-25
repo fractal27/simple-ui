@@ -41,7 +41,7 @@ static int win32_load_font(simpleui_platform* p, const char* path, int height)
 
     int id = win->font_count++;
     FILE* f = fopen(path, "rb");
-    if (!f) return -1;
+    if (!f) { win->font_count--; return -1; }
 
     fseek(f, 0, SEEK_END);
     size_t size = ftell(f);
@@ -187,6 +187,7 @@ static void win32_draw_line(simpleui_platform* p, int x1, int y1, int x2, int y2
 static void win32_draw_text(simpleui_platform* p, int x, int y, const char* text, simpleui_color color, int font_id)
 {
     simpleui_win32* win = p->impl;
+    if (font_id < 0 || font_id >= win->font_count) return;
 
     COLORREF fg = RGB(color.r, color.g, color.b);
 

@@ -1,9 +1,11 @@
 #include <X11/Xlib.h>
+#include <X11/Xutil.h>
 #include <sys/epoll.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <fcntl.h>
 
 #include "simpleui.h"
 
@@ -50,7 +52,7 @@ static int x11_load_font(simpleui_platform* p, const char* path, int height)
 
     int id = x11->font_count++;
     FILE* f = fopen(path, "rb");
-    if (!f) return -1;
+    if (!f) { x11->font_count--; return -1; }
 
     fseek(f, 0, SEEK_END);
     size_t size = ftell(f);
@@ -78,6 +80,7 @@ static int x11_load_font(simpleui_platform* p, const char* path, int height)
 
 static void x11_free_font(simpleui_platform* p, int font_id)
 {
+	// TODO
     (void)p;
     (void)font_id;
 }
@@ -186,9 +189,7 @@ static void x11_build_atlas(simpleui_x11* x11)
 static void x11_draw_text(simpleui_platform* p, int x, int y, const char* text, simpleui_color color, int font_id)
 {
     simpleui_x11* x11 = p->impl;
-    (void)x; (void)y; (void)text; (void)color; (void)font_id;
-
-    unsigned long c = (color.r << 16) | (color.g << 8) | color.b;
+    if (font_id < 0 || font_id >= x11->font_count) return;
 
     for (int i = 0; text[i]; i++) {
         int ch = (unsigned char)text[i];
@@ -202,32 +203,28 @@ static void x11_draw_text(simpleui_platform* p, int x, int y, const char* text, 
         unsigned char* buf = stbtt_GetGlyphBitmap(info, scale, scale, glyph, &w, &h, &xoff, &yoff);
 
         if (buf && w > 0 && h > 0) {
-            Pixmap pix = XCreatePixmap(x11->display, x11->window, w, h, 1);
-
-            GC mono_gc = XCreateGC(x11->display, pix, 0, NULL);
-            XSetForeground(x11->display, mono_gc, 0);
-            XFillRectangle(x11->display, pix, mono_gc, 0, 0, w, h);
-            XSetForeground(x11->display, mono_gc, 1);
-
-            for (int row = 0; row < h; row++) {
-                for (int col = 0; col < w; col++) {
-                    unsigned char alpha = buf[row * w + col];
-                    if (alpha > 128) {
-                        XDrawPoint(x11->display, pix, mono_gc, col, row);
+            XImage* img = XGetImage(x11->display, x11->back_buffer,
+                                     x + xoff, y + yoff, w, h,
+                                     AllPlanes, ZPixmap);
+            if (img) {
+                for (int row = 0; row < h; row++) {
+                    for (int col = 0; col < w; col++) {
+                        unsigned char a = buf[row * w + col];
+                        if (a == 0) continue;
+                        unsigned long in = XGetPixel(img, col, row);
+                        int br = (in >> 16) & 0xFF;
+                        int bg = (in >> 8) & 0xFF;
+                        int bb = in & 0xFF;
+                        int nr = (color.r * a + br * (255 - a)) / 255;
+                        int ng = (color.g * a + bg * (255 - a)) / 255;
+                        int nb = (color.b * a + bb * (255 - a)) / 255;
+                        XPutPixel(img, col, row, (nr << 16) | (ng << 8) | nb);
                     }
                 }
+                XPutImage(x11->display, x11->back_buffer, x11->gc,
+                          img, 0, 0, x + xoff, y + yoff, w, h);
+                XDestroyImage(img);
             }
-
-            XGCValues gcv;
-            gcv.foreground = c;
-            gcv.background = 0;
-            GC text_gc = XCreateGC(x11->display, x11->back_buffer, GCForeground | GCBackground, &gcv);
-
-            XCopyPlane(x11->display, pix, x11->back_buffer, text_gc, 0, 0, w, h, x + xoff, y + yoff, 1);
-
-            XFreeGC(x11->display, mono_gc);
-            XFreeGC(x11->display, text_gc);
-            XFreePixmap(x11->display, pix);
         }
 
         int adv = 0;
@@ -263,7 +260,7 @@ static bool x11_init(simpleui_platform* p, int width, int height, const char* ti
         WhitePixel(x11->display, x11->screen));
 
     XSelectInput(x11->display, x11->window,
-        ExposureMask | ButtonPressMask | ButtonReleaseMask | PointerMotionMask | KeyPressMask);
+        ExposureMask | ButtonPressMask | ButtonReleaseMask | PointerMotionMask | KeyPressMask | StructureNotifyMask);
 
     XStoreName(x11->display, x11->window, title);
     XMapWindow(x11->display, x11->window);
@@ -325,6 +322,16 @@ static void x11_begin_frame(simpleui_platform* p)
 
         switch (e.type) {
             case Expose:
+                break;
+            case ConfigureNotify:
+                if (e.xconfigure.width != x11->width || e.xconfigure.height != x11->height) {
+                    x11->width = e.xconfigure.width;
+                    x11->height = e.xconfigure.height;
+                    if (x11->back_buffer) XFreePixmap(x11->display, x11->back_buffer);
+                    x11->back_buffer = XCreatePixmap(x11->display, x11->window,
+                                                     x11->width, x11->height,
+                                                     DefaultDepth(x11->display, x11->screen));
+                }
                 break;
             case MotionNotify:
                 x11->mouse_x = e.xmotion.x;
@@ -412,6 +419,64 @@ static bool x11_get_quit(simpleui_platform* p)
     return x11->quit;
 }
 
+static void x11_get_window_size(simpleui_platform* p, int* w, int* h)
+{
+    simpleui_x11* x11 = p->impl;
+    if (w) *w = x11->width;
+    if (h) *h = x11->height;
+}
+
+static void x11_capture_screenshot(simpleui_platform* p, const char* path)
+{
+    simpleui_x11* x11 = p->impl;
+
+    XImage* img = XGetImage(x11->display, x11->back_buffer,
+                            0, 0, x11->width, x11->height,
+                            AllPlanes, ZPixmap);
+    if (!img) return;
+
+    int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (fd < 0) { XDestroyImage(img); return; }
+
+    int w = img->width;
+    int h = img->height;
+    int row_size = ((w * 24 + 31) / 32) * 4;
+    int pixel_size = row_size * h;
+
+    unsigned char header[54] = {0};
+    header[0] = 'B'; header[1] = 'M';
+    *(int*)&header[2] = 54 + pixel_size;
+    *(int*)&header[10] = 54;
+    *(int*)&header[14] = 40;
+    *(int*)&header[18] = w;
+    *(int*)&header[22] = h;
+    *(short*)&header[26] = 1;
+    *(short*)&header[28] = 24;
+    *(int*)&header[34] = pixel_size;
+
+    ssize_t written = write(fd, header, 54);
+    (void)written;
+
+    unsigned char* row = malloc(row_size);
+    if (!row) { close(fd); XDestroyImage(img); return; }
+
+    for (int y = 0; y < h; y++) {
+        int src_y = h - 1 - y;
+        for (int x = 0; x < w; x++) {
+            unsigned long pixel = XGetPixel(img, x, src_y);
+            row[x * 3 + 0] = pixel & 0xFF;
+            row[x * 3 + 1] = (pixel >> 8) & 0xFF;
+            row[x * 3 + 2] = (pixel >> 16) & 0xFF;
+        }
+        ssize_t written = write(fd, row, row_size);
+        (void)written;
+    }
+
+    free(row);
+    close(fd);
+    XDestroyImage(img);
+}
+
 simpleui_platform* simpleui_platform_x11_init(void)
 {
     simpleui_platform* p = calloc(1, sizeof(simpleui_platform));
@@ -431,6 +496,8 @@ simpleui_platform* simpleui_platform_x11_init(void)
     p->draw_text = x11_draw_text;
     p->get_mouse = x11_get_mouse;
     p->get_quit = x11_get_quit;
+    p->get_window_size = x11_get_window_size;
+    p->capture_screenshot = x11_capture_screenshot;
 
     return p;
 }

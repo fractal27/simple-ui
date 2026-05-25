@@ -1,4 +1,4 @@
-.PHONY: all clean install uninstall example example_x11 example_win
+.PHONY: all clean install uninstall example example_x11 example_win debug
 
 include config.mk
 
@@ -31,6 +31,9 @@ example: $(TARGET)
 
 example_win: $(TARGET)
 	$(CC) $(CFLAGS) -o $(BUILD_DIR)/simpleui_example_win32.exe $(SRC_DIR)/simpleui_example_win32.c $(TARGET) -luser32 -lgdi32 -lwinmm
+
+debug:
+	$(MAKE) -Bj DEBUG=1
 
 clean:
 	rm -rf $(BUILD_DIR)
